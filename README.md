@@ -47,7 +47,7 @@ On first run the app creates a sample post and an admin account: `admin@blog.com
 | DELETE | /api/comments/:id | Comment author or admin |
 
 ## Live Demo
-[Add your deployed link here]
+ https://janarthanan-8.github.io/blog-platform/
 
 ## Learning Outcomes
 Hands-on full-stack development with content management features (CRUD), authentication and authorization, and user interaction through comments.
