@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BlogSpace</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,Segoe UI,Arial,sans-serif;background:#f5f6fa;color:#1a1d29;line-height:1.5}
+nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#1a1d29;padding:12px 16px}
+nav b{color:#fff;margin-right:auto;font-size:18px;cursor:pointer}
+nav button{background:transparent;color:#cfd3e0;border:0;padding:8px 10px;cursor:pointer;border-radius:6px;font:inherit}
+nav button:hover{background:#323850;color:#fff}
+main{max-width:760px;margin:0 auto;padding:18px 14px}
+.box{background:#fff;border:1px solid #e3e5ee;border-radius:12px;padding:16px;margin-bottom:12px}
+.post{cursor:pointer}.post:hover{border-color:#4f5fe0}.post h3{margin:0 0 4px}
+.muted{color:#6b7183;font-size:13px}.top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.content{white-space:pre-wrap;margin-top:14px}
+input,textarea{width:100%;padding:10px;border:1px solid #d5d8e4;border-radius:8px;margin:4px 0 10px;font:inherit}
+textarea{min-height:140px;resize:vertical}
+.btn{background:#4f5fe0;color:#fff;border:0;padding:9px 14px;border-radius:8px;cursor:pointer;font:inherit;font-weight:600}
+.btn.red{background:#e5484d}.btn.grey{background:#e8eaf2;color:#1a1d29}.btn.sm{padding:4px 9px;font-size:12px}
+.auth{max-width:360px;margin:30px auto}.err{color:#e5484d;font-size:13px;min-height:16px}
+.comment{border-top:1px solid #eef0f6;padding:10px 0}.comment:first-child{border-top:0}
+#msg{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#1a1d29;color:#fff;padding:10px 16px;border-radius:8px;display:none}
+</style></head><body>
+<nav id="nav"></nav><main id="app"></main><div id="msg"></div>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=d=>new Date(d).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});
+let token=localStorage.token||'',user=JSON.parse(localStorage.user||'null'),view='list',postId=null,current=null,mode='login';
+const save=()=>{localStorage.token=token;localStorage.user=JSON.stringify(user)};
+function toast(t){const m=$('#msg');m.textContent=t;m.style.display='block';setTimeout(()=>m.style.display='none',2200)}
+async function api(p,method='GET',body){
+  const r=await fetch('/api'+p,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:body?JSON.stringify(body):undefined});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok){if(r.status===401&&token)logout();throw new Error(d.error||'Something went wrong')}
+  return d;
+}
+function nav(){
+  $('#nav').innerHTML='<b onclick="go(\'list\')">📝 BlogSpace</b>'+(user?`<button onclick="newPost()">Write</button><button onclick="logout()">Logout (${esc(user.name)})</button>`:`<button onclick="go('login')">Login / Register</button>`);
+}
+const go=v=>{view=v;render()};
+function logout(){token='';user=null;save();go('list')}
+async function render(){nav();const a=$('#app');try{await({list:listView,post:postView,edit:editView,login:loginView}[view])(a)}catch(e){a.innerHTML=`<p class="err">${esc(e.message)}</p>`}}
+
+async function listView(a){
+  const ps=await api('/posts');
+  a.innerHTML='<div class="top"><h2>Latest posts</h2>'+(user?'<button class="btn" onclick="newPost()">✍️ Write a post</button>':'')+'</div>'+
+    (ps.length?ps.map(p=>`<div class="box post" onclick="openPost('${p._id}')"><h3>${esc(p.title)}</h3><div class="muted">by ${esc(p.authorName)} · ${fmt(p.createdAt)}</div><p>${esc(p.content.slice(0,160))}${p.content.length>160?'…':''}</p></div>`).join(''):'<p class="muted">No posts yet. Be the first to write one!</p>');
+}
+function openPost(id){postId=id;go('post')}
+async function postView(a){
+  const {post,comments}=await api('/posts/'+postId);
+  current=post;
+  const mine=user&&(user.role==='admin'||user.id===post.author);
+  a.innerHTML=`<button class="btn grey" onclick="go('list')">← Back</button>
+  <div class="box" style="margin-top:12px"><h2 style="margin:0">${esc(post.title)}</h2><div class="muted">by ${esc(post.authorName)} · ${fmt(post.createdAt)}${post.updatedAt!==post.createdAt?' (edited)':''}</div>
+  <div class="content">${esc(post.content)}</div>${mine?'<br><button class="btn grey" onclick="editPost()">Edit</button> <button class="btn red" onclick="delPost()">Delete</button>':''}</div>
+  <h3>Comments (${comments.length})</h3>
+  <div class="box">${user?`<textarea id="ct" style="min-height:70px" placeholder="Write a comment..."></textarea><button class="btn" onclick="addComment()">Post comment</button>`:'<span class="muted">Please <a href="#" onclick="go(\'login\');return false">log in</a> to comment.</span>'}</div>
+  <div class="box">${comments.length?comments.map(c=>`<div class="comment"><b>${esc(c.userName)}</b> <span class="muted">· ${fmt(c.createdAt)}</span>${user&&(user.role==='admin'||user.id===c.user)?` <button class="btn red sm" onclick="delComment('${c._id}')">Delete</button>`:''}<div>${esc(c.text)}</div></div>`).join(''):'<span class="muted">No comments yet.</span>'}</div>`;
+}
+async function addComment(){try{await api('/posts/'+postId+'/comments','POST',{text:$('#ct').value});render()}catch(e){toast(e.message)}}
+async function delComment(id){if(!confirm('Delete this comment?'))return;try{await api('/comments/'+id,'DELETE');render()}catch(e){toast(e.message)}}
+function newPost(){current=null;go('edit')}
+function editPost(){go('edit')}
+function editView(a){
+  if(!user){return go('login')}
+  a.innerHTML=`<div class="box"><h2>${current?'Edit post':'New post'}</h2><input id="t" placeholder="Title" value="${esc(current?.title||'')}"><textarea id="b" placeholder="Write your post...">${esc(current?.content||'')}</textarea><button class="btn" onclick="savePost()">${current?'Save changes':'Publish'}</button> <button class="btn grey" onclick="${current?"go('post')":"go('list')"}">Cancel</button><div class="err" id="er"></div></div>`;
+}
+async function savePost(){
+  const body={title:$('#t').value,content:$('#b').value};
+  try{
+    if(current){await api('/posts/'+current._id,'PUT',body);go('post')}
+    else{const p=await api('/posts','POST',body);postId=p._id;go('post')}
+    toast('Saved');
+  }catch(e){$('#er').textContent=e.message}
+}
+async function delPost(){if(!confirm('Delete this post and its comments?'))return;try{await api('/posts/'+postId,'DELETE');toast('Post deleted');go('list')}catch(e){toast(e.message)}}
+function loginView(a){
+  const l=mode==='login';
+  a.innerHTML=`<div class="box auth"><h2>${l?'Login':'Register'}</h2>${l?'':'<input id="n" placeholder="Name">'}<input id="e" placeholder="Email"><input id="p" type="password" placeholder="Password"><button class="btn" style="width:100%" onclick="doAuth()">${l?'Login':'Create account'}</button><div class="err" id="er"></div><p class="muted" style="cursor:pointer" onclick="mode=mode==='login'?'register':'login';render()">${l?'New here? Register':'Have an account? Login'}</p></div>`;
+}
+async function doAuth(){
+  try{const d=await api('/auth/'+mode,'POST',{name:$('#n')?.value,email:$('#e').value,password:$('#p').value});token=d.token;user=d.user;save();go('list')}catch(e){$('#er').textContent=e.message}
+}
+render();
+</script></body></html>
